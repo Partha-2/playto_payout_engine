@@ -15,17 +15,17 @@ import {
 } from 'lucide-react';
 
 // Get API base URL from environment or use relative path
-const API_BASE = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.host}/api/v1`;
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000/api/v1' : `${window.location.protocol}//${window.location.host}/api/v1`);
 
 export default function App() {
   const [merchant, setMerchant] = useState(null);
   const [payouts, setPayouts] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [errorState, setErrorState] = useState(null);
   const [merchantId, setMerchantId] = useState(1); // Default to first seeded merchant
   const [showPayoutForm, setShowPayoutForm] = useState(false);
 
-  const fetchData = async () => {
     try {
       const [mRes, pRes, hRes] = await Promise.all([
         axios.get(`${API_BASE}/merchants/${merchantId}/`),
@@ -35,9 +35,12 @@ export default function App() {
       setMerchant(mRes.data);
       setPayouts(pRes.data);
       setHistory(hRes.data);
-      setLoading(false);
+      setErrorState(null);
     } catch (err) {
       console.error("Error fetching data", err);
+      setErrorState(err.message || "Failed to fetch data");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -47,7 +50,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [merchantId]);
 
-  if (loading) return (
+  if (loading && !merchant) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
       <motion.div 
         animate={{ rotate: 360 }}
@@ -55,6 +58,18 @@ export default function App() {
       >
         <RefreshCcw className="text-primary w-8 h-8" />
       </motion.div>
+    </div>
+  );
+
+  if (errorState && !merchant) return (
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white p-4">
+      <AlertCircle className="text-rose-500 w-16 h-16 mb-4" />
+      <h2 className="text-2xl font-bold">Connection Error</h2>
+      <p className="text-zinc-400 mt-2 text-center">Could not connect to the API at <br/><span className="text-white font-mono bg-white/10 px-2 py-1 rounded text-sm">{API_BASE}</span></p>
+      <div className="bg-white/5 p-4 rounded-xl mt-6 max-w-md text-sm text-zinc-400 border border-white/10">
+        <p className="mb-2"><strong className="text-white">If running locally:</strong> Make sure your Django backend is running on port 8000.</p>
+        <p><strong className="text-white">If deployed:</strong> Ensure the <code className="text-primary bg-primary/10 px-1 rounded">VITE_API_URL</code> environment variable is set to your Render backend URL.</p>
+      </div>
     </div>
   );
 
