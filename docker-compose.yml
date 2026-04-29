@@ -1,0 +1,110 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: playto-postgres
+    environment:
+      POSTGRES_USER: playto
+      POSTGRES_PASSWORD: playto_dev_password
+      POSTGRES_DB: playto_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U playto"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: playto-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.dev
+    container_name: playto-backend
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    environment:
+      DEBUG: "True"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
+      DATABASE_URL: "postgresql://playto:playto_dev_password@postgres:5432/playto_db"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    working_dir: /app
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.dev
+    container_name: playto-celery-worker
+    command: celery -A payout_service worker --loglevel=info
+    environment:
+      DEBUG: "True"
+      DATABASE_URL: "postgresql://playto:playto_dev_password@postgres:5432/playto_db"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+    working_dir: /app
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.dev
+    container_name: playto-celery-beat
+    command: celery -A payout_service beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      DEBUG: "True"
+      DATABASE_URL: "postgresql://playto:playto_dev_password@postgres:5432/playto_db"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+    working_dir: /app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend
+    container_name: playto-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: "http://localhost:8000/api/v1"
+    working_dir: /app
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: playto-network

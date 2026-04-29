@@ -1,0 +1,90 @@
+services:
+  - type: web
+    name: playto-api
+    runtime: python
+    runtimeVersion: 3.10.13
+    buildCommand: cd backend && pip install --upgrade pip setuptools wheel && pip install -r requirements.txt && python manage.py migrate && python manage.py seed_data
+    startCommand: cd backend && gunicorn payout_service.wsgi:application --bind 0.0.0.0:$PORT --workers 4 --timeout 120
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "*.onrender.com,localhost"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: playto-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: playto-redis
+          property: connectionString
+          envVarKey: REDIS_URL
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: playto-redis
+          property: connectionString
+          envVarKey: REDIS_URL
+      - key: SECRET_KEY
+        generateValue: true
+
+  - type: worker
+    name: playto-worker
+    runtime: python
+    runtimeVersion: 3.10.13
+    buildCommand: cd backend && pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
+    startCommand: cd backend && celery -A payout_service worker --loglevel=info
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: playto-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: playto-redis
+          property: connectionString
+          envVarKey: REDIS_URL
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: playto-redis
+          property: connectionString
+          envVarKey: REDIS_URL
+      - key: SECRET_KEY
+        generateValue: true
+
+  - type: background_worker
+    name: playto-beat
+    runtime: python
+    runtimeVersion: 3.10.13
+    buildCommand: cd backend && pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
+    startCommand: cd backend && celery -A payout_service beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: playto-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: playto-redis
+          property: connectionString
+          envVarKey: REDIS_URL
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: playto-redis
+          property: connectionString
+          envVarKey: REDIS_URL
+      - key: SECRET_KEY
+        generateValue: true
+
+databases:
+  - name: playto-db
+    plan: free
+    databaseName: playto
+    username: playto
+
+redis:
+  - name: playto-redis
+    plan: free
