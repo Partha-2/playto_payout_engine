@@ -11,6 +11,7 @@ cd backend
 pip install -r requirements.txt
 
 echo "Running migrations..."
+python manage.py makemigrations
 python manage.py migrate
 
 echo "Seeding data..."
